@@ -12,6 +12,7 @@ db.exec(`
     email         TEXT    NOT NULL UNIQUE,
     name          TEXT    NOT NULL,
     password_hash TEXT    NOT NULL,
+    last_seen_at  INTEGER NOT NULL DEFAULT (unixepoch()),
     created_at    INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
@@ -125,117 +126,52 @@ db.exec(`
     ON featured_clips (group_id, created_at DESC);
 `)
 
-const OFFICIAL_GAMES = [
+const LEGACY_EXAMPLE_GAMES = [
   {
     name: 'Poker Night',
-    category: 'Card game',
     specificGame: 'Texas Hold’em',
-    playerCount: '2-8',
-    roundCount: '5+ hands',
-    scoringSystem: 'Highest chip count at the agreed stopping point wins. Blinds and payouts determine score swings.',
-    rules: 'Players bet, call, raise, or fold as shared and private cards build the best hand.',
   },
   {
     name: 'Backyard Cup Pong',
-    category: 'Drinking game',
     specificGame: 'Cup Pong',
-    playerCount: '2-4',
-    roundCount: '10 cups per side',
-    scoringSystem: 'Higher score wins. Add 1 point per cup made and subtract cups hit against your side.',
-    rules: 'Teams alternate shots, remove cups that are hit, and finish with redemption rules.',
   },
   {
     name: 'Hearts Classic',
-    category: 'Card game',
     specificGame: 'Hearts',
-    playerCount: '4',
-    roundCount: 'Until 100 points',
-    scoringSystem: 'Lowest score wins. Add penalty points each hand, unless a player shoots the moon.',
-    rules: 'Avoid hearts and the queen of spades, unless you manage to shoot the moon.',
   },
 ]
 
-ensureColumn('games', 'scoring_system', "TEXT NOT NULL DEFAULT ''")
-
-const OFFICIAL_CLIPS = [
-  {
-    gameKey: 'Cup Pong',
-    title: 'Last-cup comeback',
-    description: 'A fast comeback clip from the final round.',
-    videoUrl: 'https://example.com/clips/cup-pong-comeback',
-    tags: ['cup pong', 'clutch', 'featured'],
-    likes: 218,
-  },
-  {
-    gameKey: 'Hearts',
-    title: 'Shooting the moon',
-    description: 'A clean example of turning a risky hand into a big swing.',
-    videoUrl: 'https://example.com/clips/hearts-shoot-the-moon',
-    tags: ['hearts', 'cards', 'strategy'],
-    likes: 153,
-  },
+const LEGACY_EXAMPLE_CLIP_URLS = [
+  'https://example.com/clips/cup-pong-comeback',
+  'https://example.com/clips/hearts-shoot-the-moon',
 ]
 
-seedContent()
+removeLegacyExampleContent()
 
 module.exports = db
 
-function seedContent() {
-  const insertGame = db.prepare(`
-    INSERT OR IGNORE INTO games (
-      name, category, specific_game, player_count, round_count, scoring_system, rules, source, moderation_status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'official', 'approved')
+function removeLegacyExampleContent() {
+  const deleteClip = db.prepare(`
+    DELETE FROM featured_clips
+    WHERE video_url = ?
   `)
 
-  const updateGameScoring = db.prepare(`
-    UPDATE games
-    SET scoring_system = ?
-    WHERE specific_game = ? AND source = 'official' AND (scoring_system IS NULL OR scoring_system = '')
+  const deleteGame = db.prepare(`
+    DELETE FROM games
+    WHERE name = ? AND specific_game = ? AND source = 'official'
   `)
 
-  const insertClip = db.prepare(`
-    INSERT OR IGNORE INTO featured_clips (
-      game_id, title, description, video_url, tags, likes
-    ) VALUES (?, ?, ?, ?, ?, ?)
-  `)
-
-  const findGameId = db.prepare(`
-    SELECT id FROM games
-    WHERE specific_game = ? AND source = 'official'
-    LIMIT 1
-  `)
-
-  const seed = db.transaction(() => {
-    for (const game of OFFICIAL_GAMES) {
-      insertGame.run(
-        game.name,
-        game.category,
-        game.specificGame,
-        game.playerCount,
-        game.roundCount,
-        game.scoringSystem,
-        game.rules,
-      )
-
-      updateGameScoring.run(game.scoringSystem, game.specificGame)
+  const cleanup = db.transaction(() => {
+    for (const videoUrl of LEGACY_EXAMPLE_CLIP_URLS) {
+      deleteClip.run(videoUrl)
     }
 
-    for (const clip of OFFICIAL_CLIPS) {
-      const row = findGameId.get(clip.gameKey)
-      if (!row) continue
-
-      insertClip.run(
-        row.id,
-        clip.title,
-        clip.description,
-        clip.videoUrl,
-        JSON.stringify(clip.tags),
-        clip.likes,
-      )
+    for (const game of LEGACY_EXAMPLE_GAMES) {
+      deleteGame.run(game.name, game.specificGame)
     }
   })
 
-  seed()
+  cleanup()
 }
 
 function ensureColumn(tableName, columnName, definition) {

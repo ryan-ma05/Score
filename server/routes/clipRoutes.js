@@ -10,6 +10,16 @@ router.get('/', (req, res) => {
   const sort = req.query.sort === 'recent' ? 'recent' : 'likes'
   const gameId = toOptionalInteger(req.query.gameId)
   const groupId = toOptionalInteger(req.query.groupId)
+  const limit = Math.min(Number(req.query.limit) || 20, 100)
+  const offset = Math.max(Number(req.query.offset) || 0, 0)
+
+  const baseArgs = [
+    gameId, gameId,
+    groupId, groupId,
+    query,
+    query ? `%${query}%` : '',
+    sort, sort,
+  ]
 
   const rows = db.prepare(`
     SELECT fc.*,
@@ -32,18 +42,13 @@ router.get('/', (req, res) => {
       CASE WHEN ? = 'recent' THEN fc.created_at END DESC,
       CASE WHEN ? = 'likes' THEN fc.likes END DESC,
       fc.created_at DESC
-  `).all(
-    gameId,
-    gameId,
-    groupId,
-    groupId,
-    query,
-    query ? `%${query}%` : '',
-    sort,
-    sort,
-  )
+    LIMIT ? OFFSET ?
+  `).all(...baseArgs, limit + 1, offset)
 
-  return res.json({ clips: rows.map(formatClipRow) })
+  const hasMore = rows.length > limit
+  if (hasMore) rows.pop()
+
+  return res.json({ clips: rows.map(formatClipRow), hasMore })
 })
 
 router.post('/', (req, res) => {
@@ -176,8 +181,8 @@ function normalizeClipPayload(body) {
     return { ok: false, error: 'title, description, videoUrl, and tags are required' }
   }
 
-  if (!/^https?:\/\//i.test(videoUrl)) {
-    return { ok: false, error: 'videoUrl must be a full http or https URL' }
+  if (!/^(https?:\/\/|\/uploads\/)/i.test(videoUrl)) {
+    return { ok: false, error: 'videoUrl must be a full http(s) URL or an /uploads/ path' }
   }
 
   return {

@@ -30,8 +30,7 @@ export default function Search({ games }: Props) {
           <div>
             <h1 className="text-3xl font-semibold text-gray-900">Explore saved games</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
-              Browse popular titles added by Score and community submissions pushed in from the
-              Create tab.
+              Browse the saved catalog and anything your community adds from the Create tab.
             </p>
           </div>
 
@@ -41,7 +40,7 @@ export default function Search({ games }: Props) {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Try poker, drinking game, or hearts"
+                placeholder="Search by name, category, or rules"
                 className={inputClassName}
               />
             </label>
@@ -82,7 +81,7 @@ export default function Search({ games }: Props) {
                     : 'bg-amber-50 text-amber-700',
                 ].join(' ')}
               >
-                {game.source === 'official' ? 'Score pick' : 'Community'}
+                {game.source === 'official' ? 'Official' : 'Community'}
               </span>
             </div>
 

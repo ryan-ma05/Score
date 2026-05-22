@@ -1,7 +1,12 @@
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'
+const DEFAULT_SECRET = 'dev-secret-change-me'
+const JWT_SECRET = process.env.JWT_SECRET || DEFAULT_SECRET
+
+if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET === DEFAULT_SECRET)) {
+  throw new Error('JWT_SECRET must be set to a strong secret in production')
+}
 
 function hashPassword(plain) {
   return bcrypt.hash(plain, 12)

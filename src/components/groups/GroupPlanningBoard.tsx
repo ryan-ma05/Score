@@ -86,11 +86,11 @@ export default function GroupPlanningBoard({ groups, refreshKey = 0 }: Props) {
   const upcomingSessions = snapshots.filter((snapshot) => snapshot.nextSession).length
 
   return (
-    <section className="space-y-4 rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm">
+    <section className="space-y-4 rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Group planning</h2>
-          <p className="mt-1 max-w-2xl text-sm text-gray-500">
+          <h2 className="text-xl font-semibold text-slate-900">Group planning</h2>
+          <p className="mt-1 max-w-2xl text-sm text-slate-500">
             Saved games act as reusable templates. Sessions are the specific nights or events those
             templates power.
           </p>
@@ -103,51 +103,53 @@ export default function GroupPlanningBoard({ groups, refreshKey = 0 }: Props) {
       </div>
 
       {loading ? (
-        <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-10 text-center text-sm text-gray-500">
+        <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/85 px-4 py-10 text-center text-sm text-slate-500">
           Loading group planning details…
         </div>
       ) : error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+        <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
           {error}
         </div>
       ) : snapshots.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-10 text-center text-sm text-gray-500">
+        <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/85 px-4 py-10 text-center text-sm text-slate-500">
           Join or create a group to start saving game templates and scheduling sessions.
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
           {snapshots.map((snapshot) => (
-            <article key={snapshot.group.id} className="rounded-[24px] border border-gray-200 p-5">
+            <article key={snapshot.group.id} className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-base font-semibold text-gray-900">{snapshot.group.name}</h3>
-                  <p className="mt-1 text-sm text-gray-500">{snapshot.group.member_count} members</p>
+                  <h3 className="text-base font-semibold text-slate-900">{snapshot.group.name}</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {snapshot.group.active_member_count ?? 0}/{snapshot.group.member_count} online
+                  </p>
                 </div>
-                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-gray-600">
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
                   {snapshot.savedTemplateCount} templates
                 </span>
               </div>
 
               <div className="mt-4 space-y-3">
-                <div className="rounded-2xl bg-gray-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">Next session</p>
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50/90 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Next session</p>
                   {snapshot.nextSession ? (
                     <>
-                      <p className="mt-2 text-sm font-semibold text-gray-900">{snapshot.nextSession.specificGame}</p>
-                      <p className="mt-1 text-sm text-gray-500">
+                      <p className="mt-2 text-sm font-semibold text-slate-900">{snapshot.nextSession.specificGame}</p>
+                      <p className="mt-1 text-sm text-slate-500">
                         {snapshot.nextSession.scheduledFor
                           ? formatDateTime(snapshot.nextSession.scheduledFor)
                           : 'No time scheduled yet'}
                       </p>
                     </>
                   ) : (
-                    <p className="mt-2 text-sm text-gray-500">No scheduled sessions yet.</p>
+                    <p className="mt-2 text-sm text-slate-500">No scheduled sessions yet.</p>
                   )}
                 </div>
 
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500">Total logged or planned sessions</span>
-                  <span className="font-semibold text-gray-900">{snapshot.sessionCount}</span>
+                  <span className="text-slate-500">Total logged or planned sessions</span>
+                  <span className="font-semibold text-slate-900">{snapshot.sessionCount}</span>
                 </div>
               </div>
             </article>

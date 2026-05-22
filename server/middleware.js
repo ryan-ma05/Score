@@ -1,3 +1,4 @@
+const db = require('./db')
 const { verifyToken } = require('./auth')
 
 function requireAuth(req, res, next) {
@@ -10,6 +11,7 @@ function requireAuth(req, res, next) {
 
   try {
     req.user = verifyToken(token)
+    db.prepare('UPDATE users SET last_seen_at = unixepoch() WHERE id = ?').run(req.user.id)
     next()
   } catch {
     return res.status(401).json({ error: 'Unauthorized' })

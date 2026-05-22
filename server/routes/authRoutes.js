@@ -1,11 +1,20 @@
 const { Router } = require('express')
+const { rateLimit } = require('express-rate-limit')
 const db = require('../db')
 const { hashPassword, comparePassword, signToken } = require('../auth')
 const { requireAuth } = require('../middleware')
 
 const router = Router()
 
-router.post('/register', async (req, res) => {
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Too many attempts — please try again in 15 minutes.' },
+})
+
+router.post('/register', authLimiter, async (req, res) => {
   const { email, name, password } = req.body ?? {}
 
   if (!email || !name || !password) {
@@ -31,7 +40,7 @@ router.post('/register', async (req, res) => {
   }
 })
 
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   const { email, password } = req.body ?? {}
 
   if (!email || !password) {

@@ -1,29 +1,25 @@
 import { startTransition, useEffect, useState } from 'react'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { ApiError } from './lib/api'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { FriendProvider } from './context/FriendContext'
 import { GroupProvider } from './context/GroupContext'
-import TopTabs, { type AppTab } from './components/navigation/TopTabs'
+import TopTabs from './components/navigation/TopTabs'
 import {
-  createFeaturedClip,
   createGame,
-  listFeaturedClips,
   listGames,
 } from './lib/contentApi'
 import {
-  sortClips,
   sortGames,
-  validateClipSubmission,
   validateGameSubmission,
-  type CreateClipInput,
   type CreateGameInput,
-  type FeaturedClip,
   type GameDefinition,
 } from './lib/content'
 import Create from './pages/Create'
 import Featured from './pages/Featured'
 import Friends from './pages/Friends'
 import Home from './pages/Home'
+import Profile from './pages/Profile'
 import Search from './pages/Search'
 import SignIn from './pages/SignIn'
 import SignUp from './pages/SignUp'
@@ -33,9 +29,7 @@ type AuthPage = 'signin' | 'signup'
 function AppRoutes() {
   const { user, initializing } = useAuth()
   const [authPage, setAuthPage] = useState<AuthPage>('signin')
-  const [activeTab, setActiveTab] = useState<AppTab>('home')
   const [games, setGames] = useState<GameDefinition[]>([])
-  const [clips, setClips] = useState<FeaturedClip[]>([])
   const [contentLoading, setContentLoading] = useState(true)
   const [contentError, setContentError] = useState<string | null>(null)
 
@@ -52,22 +46,16 @@ function AppRoutes() {
       setContentError(null)
     })
 
-    Promise.all([
-      listGames(),
-      listFeaturedClips(),
-    ])
-      .then(([gameRows, clipRows]) => {
+    listGames()
+      .then((gameRows) => {
         if (cancelled) return
-
         startTransition(() => {
           setGames(sortGames(gameRows))
-          setClips(sortClips(clipRows))
         })
       })
       .catch((err) => {
         if (cancelled) return
-
-        const message = err instanceof ApiError ? err.message : 'Could not load the content library.'
+        const message = err instanceof ApiError ? err.message : 'Could not load the game library.'
         setContentError(message)
       })
       .finally(() => {
@@ -112,31 +100,14 @@ function AppRoutes() {
     setGames((current) => sortGames([createdGame, ...current.filter((game) => game.id !== createdGame.id)]))
   }
 
-  async function handleCreateClip(input: CreateClipInput) {
-    const validationError = validateClipSubmission(input)
-    if (validationError) return validationError
-
-    try {
-      const createdClip = await createFeaturedClip(input)
-      setClips((current) => sortClips([createdClip, ...current.filter((clip) => clip.id !== createdClip.id)]))
-      return null
-    } catch (err) {
-      return err instanceof ApiError ? err.message : 'Could not add this clip right now.'
-    }
-  }
-
   return (
     <FriendProvider>
       <GroupProvider>
         <AuthenticatedShell
-          activeTab={activeTab}
-          clips={clips}
           contentError={contentError}
           contentLoading={contentLoading}
           games={games}
           onCatalogGameCreated={handleCatalogGameCreated}
-          onChangeTab={setActiveTab}
-          onCreateClip={handleCreateClip}
           onCreateGame={handleCreateGame}
         />
       </GroupProvider>
@@ -145,26 +116,18 @@ function AppRoutes() {
 }
 
 interface AuthenticatedShellProps {
-  activeTab: AppTab
-  clips: FeaturedClip[]
   contentError: string | null
   contentLoading: boolean
   games: GameDefinition[]
   onCatalogGameCreated: (game: GameDefinition) => void
-  onChangeTab: (tab: AppTab) => void
-  onCreateClip: (input: CreateClipInput) => Promise<string | null>
   onCreateGame: (input: CreateGameInput) => Promise<string | null>
 }
 
 function AuthenticatedShell({
-  activeTab,
-  clips,
   contentError,
   contentLoading,
   games,
   onCatalogGameCreated,
-  onChangeTab,
-  onCreateClip,
   onCreateGame,
 }: AuthenticatedShellProps) {
   const { user, signOut } = useAuth()
@@ -188,7 +151,7 @@ function AuthenticatedShell({
             </div>
 
             <div className="flex flex-col items-stretch gap-3 lg:items-end">
-              <TopTabs activeTab={activeTab} onChange={onChangeTab} />
+              <TopTabs />
               <button
                 onClick={signOut}
                 className="self-start rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 lg:self-end"
@@ -202,7 +165,7 @@ function AuthenticatedShell({
         <main className="mt-6 space-y-4">
           {contentLoading && (
             <section className="rounded-[24px] border border-gray-200 bg-white px-5 py-4 text-sm text-gray-500 shadow-sm">
-              Loading games and featured clips…
+              Loading games…
             </section>
           )}
 
@@ -212,58 +175,28 @@ function AuthenticatedShell({
             </section>
           )}
 
-          {renderActivePage(activeTab, {
-            clips,
-            games,
-            onCatalogGameCreated,
-            onCreateClip,
-            onCreateGame,
-          })}
+          <Routes>
+            <Route path="/" element={<Navigate to="/home" replace />} />
+            <Route path="/home" element={<Home games={games} onCatalogGameCreated={onCatalogGameCreated} />} />
+            <Route path="/create" element={<Create onCreateGame={onCreateGame} recentGames={games} />} />
+            <Route path="/featured" element={<Featured games={games} />} />
+            <Route path="/search" element={<Search games={games} />} />
+            <Route path="/friends" element={<Friends />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="*" element={<Navigate to="/home" replace />} />
+          </Routes>
         </main>
       </div>
     </div>
   )
 }
 
-function renderActivePage(
-  activeTab: AppTab,
-  {
-    clips,
-    games,
-    onCatalogGameCreated,
-    onCreateClip,
-    onCreateGame,
-  }: Pick<
-    AuthenticatedShellProps,
-    'clips' | 'games' | 'onCatalogGameCreated' | 'onCreateClip' | 'onCreateGame'
-  >,
-) {
-  switch (activeTab) {
-    case 'create':
-      return <Create onCreateGame={onCreateGame} recentGames={games} />
-    case 'featured':
-      return <Featured clips={clips} games={games} onCreateClip={onCreateClip} />
-    case 'search':
-      return <Search games={games} />
-    case 'friends':
-      return <Friends />
-    case 'home':
-    default:
-      return (
-        <Home
-          gameCount={games.length}
-          clipCount={clips.length}
-          games={games}
-          onCatalogGameCreated={onCatalogGameCreated}
-        />
-      )
-  }
-}
-
 export default function App() {
   return (
-    <AuthProvider>
-      <AppRoutes />
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
   )
 }

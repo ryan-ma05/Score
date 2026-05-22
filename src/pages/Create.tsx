@@ -70,7 +70,7 @@ export default function Create({ onCreateGame, recentGames }: Props) {
                 required
                 value={form.name}
                 onChange={(event) => updateField('name', event.target.value)}
-                placeholder="Friday Night Elimination"
+                placeholder="Enter a game name"
                 className={inputClassName}
               />
             </Field>
@@ -94,7 +94,7 @@ export default function Create({ onCreateGame, recentGames }: Props) {
                 required
                 value={form.specificGame}
                 onChange={(event) => updateField('specificGame', event.target.value)}
-                placeholder="Hearts, Cup Pong, Pick-Up Soccer"
+                placeholder="Enter the specific game"
                 className={inputClassName}
               />
             </Field>
@@ -104,7 +104,7 @@ export default function Create({ onCreateGame, recentGames }: Props) {
                 required
                 value={form.playerCount}
                 onChange={(event) => updateField('playerCount', event.target.value)}
-                placeholder="2-6"
+                placeholder="Enter the player count"
                 className={inputClassName}
               />
             </Field>
@@ -114,7 +114,7 @@ export default function Create({ onCreateGame, recentGames }: Props) {
                 required
                 value={form.roundCount}
                 onChange={(event) => updateField('roundCount', event.target.value)}
-                placeholder="3 rounds or first to 21"
+                placeholder="Enter the round format"
                 className={inputClassName}
               />
             </Field>
@@ -126,7 +126,7 @@ export default function Create({ onCreateGame, recentGames }: Props) {
               rows={3}
               value={form.scoringSystem}
               onChange={(event) => updateField('scoringSystem', event.target.value)}
-              placeholder="Higher score wins. Add 1 point per made cup and subtract 1 for fouls."
+              placeholder="Describe how scoring works"
               className={`${inputClassName} resize-none`}
             />
           </Field>
@@ -137,13 +137,7 @@ export default function Create({ onCreateGame, recentGames }: Props) {
               rows={7}
               value={form.rules}
               onChange={(event) => updateField('rules', event.target.value)}
-              placeholder={[
-                'Setup:',
-                'Turn flow:',
-                'Scoring:',
-                'Win condition:',
-                'Safety notes:',
-              ].join('\n')}
+              placeholder="Add the rules for this game"
               className={`${inputClassName} resize-none`}
             />
           </Field>
@@ -192,20 +186,26 @@ export default function Create({ onCreateGame, recentGames }: Props) {
 
         <section className="rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900">Recently added games</h2>
-          <div className="mt-4 space-y-3">
-            {recentGames.slice(0, 4).map((game) => (
-              <div key={game.id} className="rounded-2xl border border-gray-200 p-4">
-                <p className="text-sm font-semibold text-gray-900">{game.name}</p>
-                <p className="mt-1 text-sm text-gray-500">
-                  {game.specificGame} • {game.category}
-                </p>
-                <p className="mt-2 text-xs uppercase tracking-[0.18em] text-gray-400">
-                  {game.playerCount} players • {game.roundCount}
-                </p>
-                <p className="mt-2 text-sm text-gray-600">{game.scoringSystem}</p>
-              </div>
-            ))}
-          </div>
+          {recentGames.length === 0 ? (
+            <p className="mt-4 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-sm text-gray-500">
+              No games have been added yet.
+            </p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {recentGames.slice(0, 4).map((game) => (
+                <div key={game.id} className="rounded-2xl border border-gray-200 p-4">
+                  <p className="text-sm font-semibold text-gray-900">{game.name}</p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    {game.specificGame} • {game.category}
+                  </p>
+                  <p className="mt-2 text-xs uppercase tracking-[0.18em] text-gray-400">
+                    {game.playerCount} players • {game.roundCount}
+                  </p>
+                  <p className="mt-2 text-sm text-gray-600">{game.scoringSystem}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       </aside>
     </div>

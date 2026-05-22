@@ -32,7 +32,9 @@ interface FriendContextType {
   sentRequests: FriendRequest[]
   searchResults: UserSearchResult[]
   loading: boolean
+  hasMoreFriends: boolean
   fetchFriends: () => Promise<void>
+  loadMoreFriends: () => Promise<void>
   fetchRequests: () => Promise<void>
   searchUsers: (q: string) => Promise<void>
   clearSearch: () => void
@@ -46,20 +48,40 @@ const FriendContext = createContext<FriendContextType | null>(null)
 
 export function FriendProvider({ children }: { children: ReactNode }) {
   const [friends, setFriends] = useState<Friend[]>([])
+  const [hasMoreFriends, setHasMoreFriends] = useState(false)
+  const [friendsOffset, setFriendsOffset] = useState(0)
   const [incomingRequests, setIncomingRequests] = useState<FriendRequest[]>([])
   const [sentRequests, setSentRequests] = useState<FriendRequest[]>([])
   const [searchResults, setSearchResults] = useState<UserSearchResult[]>([])
   const [loading, setLoading] = useState(false)
 
+  const FRIENDS_PAGE = 50
+
   const fetchFriends = useCallback(async () => {
     setLoading(true)
     try {
-      const { friends: data } = await apiFetch<{ friends: Friend[] }>('/api/friends')
+      const { friends: data, hasMore } = await apiFetch<{ friends: Friend[]; hasMore: boolean }>(
+        `/api/friends?limit=${FRIENDS_PAGE}&offset=0`
+      )
       setFriends(data)
+      setHasMoreFriends(hasMore ?? false)
+      setFriendsOffset(FRIENDS_PAGE)
     } finally {
       setLoading(false)
     }
   }, [])
+
+  const loadMoreFriends = useCallback(async () => {
+    const { friends: data, hasMore } = await apiFetch<{ friends: Friend[]; hasMore: boolean }>(
+      `/api/friends?limit=${FRIENDS_PAGE}&offset=${friendsOffset}`
+    )
+    setFriends((prev) => {
+      const seen = new Set(prev.map((f) => f.id))
+      return [...prev, ...data.filter((f) => !seen.has(f.id))]
+    })
+    setHasMoreFriends(hasMore ?? false)
+    setFriendsOffset((prev) => prev + FRIENDS_PAGE)
+  }, [friendsOffset])
 
   const fetchRequests = useCallback(async () => {
     const [{ requests }, { sent }] = await Promise.all([
@@ -108,8 +130,8 @@ export function FriendProvider({ children }: { children: ReactNode }) {
 
   return (
     <FriendContext.Provider value={{
-      friends, incomingRequests, sentRequests, searchResults, loading,
-      fetchFriends, fetchRequests, searchUsers, clearSearch,
+      friends, incomingRequests, sentRequests, searchResults, loading, hasMoreFriends,
+      fetchFriends, loadMoreFriends, fetchRequests, searchUsers, clearSearch,
       sendRequest, acceptRequest, declineRequest, unfriend,
     }}>
       {children}

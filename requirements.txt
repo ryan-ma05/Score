@@ -1,0 +1,72 @@
+Score App Requirements
+======================
+
+This repository is a Node.js + React application.
+Install dependencies with:
+
+  npm install
+
+Recommended runtime
+-------------------
+- Node.js 20+ recommended
+- npm 10+ recommended
+- Writable local directories:
+  - server/data
+  - uploads
+- Open local ports:
+  - 5173 for Vite
+  - 3001 for Express + Socket.IO
+
+Environment variables
+---------------------
+- PORT=3001
+  Optional. Express port. Defaults to 3001.
+
+- JWT_SECRET=your-secret
+  Optional in development. Required in production.
+
+- CORS_ORIGIN=http://localhost:5173,http://localhost:4173
+  Optional. Comma-separated list of allowed frontend origins.
+
+Runtime dependencies
+--------------------
+- bcryptjs ^3.0.3
+- better-sqlite3 ^12.10.0
+- cors ^2.8.6
+- dotenv ^17.4.2
+- express ^5.2.1
+- express-rate-limit ^8.5.2
+- jsonwebtoken ^9.0.3
+- multer ^2.1.1
+- react ^19.2.6
+- react-dom ^19.2.6
+- react-router-dom ^7.15.1
+- socket.io ^4.8.3
+- socket.io-client ^4.8.3
+
+Development and build dependencies
+----------------------------------
+- @eslint/js ^10.0.1
+- @tailwindcss/vite ^4.3.0
+- @types/multer ^2.1.0
+- @types/node ^24.12.3
+- @types/react ^19.2.14
+- @types/react-dom ^19.2.3
+- @vitejs/plugin-react ^6.0.1
+- concurrently ^9.2.1
+- eslint ^10.3.0
+- eslint-plugin-react-hooks ^7.1.1
+- eslint-plugin-react-refresh ^0.5.2
+- globals ^17.6.0
+- nodemon ^3.1.14
+- tailwindcss ^4.3.0
+- typescript ~6.0.2
+- typescript-eslint ^8.59.2
+- vite ^8.0.12
+
+Built-in data/storage behavior
+------------------------------
+- SQLite database file: server/data/score.db
+- Local uploaded videos directory: uploads/
+- Official game catalog seeding runs on server startup
+- JWT auth token is stored in the browser's localStorage

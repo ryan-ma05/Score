@@ -62,17 +62,41 @@ export async function listFeaturedClips(params?: {
   gameId?: number | null
   groupId?: number | null
   sort?: 'likes' | 'recent'
-}) {
+  limit?: number
+  offset?: number
+}): Promise<{ clips: ReturnType<typeof mapClip>[]; hasMore: boolean }> {
   const search = new URLSearchParams()
 
   if (params?.q?.trim()) search.set('q', params.q.trim())
   if (params?.gameId) search.set('gameId', String(params.gameId))
   if (params?.groupId) search.set('groupId', String(params.groupId))
   if (params?.sort) search.set('sort', params.sort)
+  if (params?.limit != null) search.set('limit', String(params.limit))
+  if (params?.offset != null) search.set('offset', String(params.offset))
 
   const suffix = search.size > 0 ? `?${search.toString()}` : ''
-  const res = await apiFetch<{ clips: ClipRow[] }>(`/api/featured-clips${suffix}`)
-  return res.clips.map(mapClip)
+  const res = await apiFetch<{ clips: ClipRow[]; hasMore: boolean }>(`/api/featured-clips${suffix}`)
+  return { clips: res.clips.map(mapClip), hasMore: res.hasMore ?? false }
+}
+
+export async function uploadVideo(file: File): Promise<string> {
+  const token = localStorage.getItem('auth_token')
+  const formData = new FormData()
+  formData.append('video', file)
+
+  const res = await fetch('/api/upload', {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  })
+
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}))
+    throw new Error((json as { error?: string }).error ?? 'Upload failed')
+  }
+
+  const { url } = (await res.json()) as { url: string }
+  return url
 }
 
 export async function createFeaturedClip(input: CreateClipInput) {
@@ -102,7 +126,7 @@ function mapGame(row: GameRow): GameDefinition {
     category: row.category,
     specificGame: row.specific_game,
     createdAt: toMilliseconds(row.created_at),
-    createdBy: row.created_by_name ?? 'Score',
+    createdBy: row.created_by_name ?? 'System',
     source: row.source,
     moderationStatus: row.moderation_status,
   }
@@ -119,7 +143,7 @@ function mapClip(row: ClipRow): FeaturedClip {
     tags: row.tags,
     likes: row.likes,
     uploadedAt: toMilliseconds(row.created_at),
-    uploader: row.uploaded_by_name ?? 'Score',
+    uploader: row.uploaded_by_name ?? 'System',
     description: row.description,
     videoUrl: row.video_url,
   }

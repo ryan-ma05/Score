@@ -7,6 +7,9 @@ router.use(requireAuth)
 
 // GET /api/friends — accepted friends
 router.get('/', (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 50, 100)
+  const offset = Math.max(Number(req.query.offset) || 0, 0)
+
   const rows = db.prepare(`
     SELECT u.id, u.name, u.email, f.id AS friendship_id, f.created_at
     FROM friendships f
@@ -17,8 +20,13 @@ router.get('/', (req, res) => {
     WHERE (f.requester_id = ? OR f.addressee_id = ?)
       AND f.status = 'accepted'
     ORDER BY u.name ASC
-  `).all(req.user.id, req.user.id, req.user.id)
-  return res.json({ friends: rows })
+    LIMIT ? OFFSET ?
+  `).all(req.user.id, req.user.id, req.user.id, limit + 1, offset)
+
+  const hasMore = rows.length > limit
+  if (hasMore) rows.pop()
+
+  return res.json({ friends: rows, hasMore })
 })
 
 // GET /api/friends/requests — incoming pending requests

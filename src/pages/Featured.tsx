@@ -1,10 +1,10 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { CreateClipInput, FeaturedClip, GameDefinition } from '../lib/content'
+import { validateClipSubmission } from '../lib/content'
+import { createFeaturedClip, listFeaturedClips, uploadVideo } from '../lib/contentApi'
 
 interface Props {
-  clips: FeaturedClip[]
   games: GameDefinition[]
-  onCreateClip: (input: CreateClipInput) => Promise<string | null>
 }
 
 const EMPTY_FORM: CreateClipInput = {
@@ -16,16 +16,43 @@ const EMPTY_FORM: CreateClipInput = {
   videoUrl: '',
 }
 
+const PAGE_SIZE = 20
+
 type SortMode = 'likes' | 'recent'
 
-export default function Featured({ clips, games, onCreateClip }: Props) {
+export default function Featured({ games }: Props) {
   const [form, setForm] = useState<CreateClipInput>(EMPTY_FORM)
   const [query, setQuery] = useState('')
   const [gameFilter, setGameFilter] = useState('All games')
   const [sortMode, setSortMode] = useState<SortMode>('likes')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [clips, setClips] = useState<FeaturedClip[]>([])
+  const [hasMore, setHasMore] = useState(false)
+  const [offset, setOffset] = useState(0)
+  const [loadingClips, setLoadingClips] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoadingClips(true)
+    listFeaturedClips({ limit: PAGE_SIZE, offset: 0 })
+      .then(({ clips: rows, hasMore: more }) => {
+        if (cancelled) return
+        setClips(rows)
+        setHasMore(more)
+        setOffset(PAGE_SIZE)
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingClips(false)
+      })
+    return () => { cancelled = true }
+  }, [])
 
   const gameOptions = Array.from(new Set(games.map((game) => game.specificGame))).sort()
 
@@ -45,23 +72,67 @@ export default function Featured({ clips, games, onCreateClip }: Props) {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
+  async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null
+    setSelectedFile(file)
+    if (!file) {
+      updateField('videoUrl', '')
+      return
+    }
+
+    setUploading(true)
+    setError(null)
+    try {
+      const url = await uploadVideo(file)
+      updateField('videoUrl', url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed')
+      setSelectedFile(null)
+      updateField('videoUrl', '')
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    } finally {
+      setUploading(false)
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
     setSuccess(null)
+
+    const validationError = validateClipSubmission(form)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
     setSubmitting(true)
-
     try {
-      const result = await onCreateClip(form)
-      if (result) {
-        setError(result)
-        return
-      }
-
+      const createdClip = await createFeaturedClip(form)
+      setClips((current) => [createdClip, ...current.filter((c) => c.id !== createdClip.id)])
       setForm(EMPTY_FORM)
+      setSelectedFile(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
       setSuccess('Clip saved to the shared featured feed.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add this clip right now.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handleLoadMore() {
+    setLoadingMore(true)
+    try {
+      const { clips: rows, hasMore: more } = await listFeaturedClips({ limit: PAGE_SIZE, offset })
+      setClips((current) => {
+        const seen = new Set(current.map((c) => c.id))
+        return [...current, ...rows.filter((r) => !seen.has(r.id))]
+      })
+      setHasMore(more)
+      setOffset((prev) => prev + PAGE_SIZE)
+    } finally {
+      setLoadingMore(false)
     }
   }
 
@@ -72,8 +143,8 @@ export default function Featured({ clips, games, onCreateClip }: Props) {
           <p className="text-sm font-medium uppercase tracking-[0.28em] text-amber-600">Featured</p>
           <h1 className="mt-2 text-3xl font-semibold text-gray-900">Highlight the best clips</h1>
           <p className="mt-3 text-sm leading-6 text-gray-600">
-            This feed currently tracks clip metadata and tags. For real uploads later, we should
-            add object storage plus moderation on both the video itself and its metadata.
+            Upload a video clip and tag it to a game. Files are stored on the server. For production,
+            swap the storage backend to S3 or Cloudflare R2 without changing any other code.
           </p>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
@@ -83,7 +154,7 @@ export default function Featured({ clips, games, onCreateClip }: Props) {
                 required
                 value={form.title}
                 onChange={(event) => updateField('title', event.target.value)}
-                placeholder="Final shot from the championship table"
+                placeholder="Enter a clip title"
                 className={inputClassName}
               />
             </label>
@@ -103,6 +174,9 @@ export default function Featured({ clips, games, onCreateClip }: Props) {
                   </option>
                 ))}
               </select>
+              {games.length === 0 && (
+                <p className="text-sm text-amber-700">Create a game before adding a featured clip.</p>
+              )}
             </label>
 
             <label className="block space-y-2">
@@ -111,21 +185,32 @@ export default function Featured({ clips, games, onCreateClip }: Props) {
                 required
                 value={form.tags}
                 onChange={(event) => updateField('tags', event.target.value)}
-                placeholder="featured, clutch, party"
+                placeholder="Add clip tags"
                 className={inputClassName}
               />
             </label>
 
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-gray-700">Video URL</span>
-              <input
-                required
-                value={form.videoUrl}
-                onChange={(event) => updateField('videoUrl', event.target.value)}
-                placeholder="https://..."
-                className={inputClassName}
-              />
-            </label>
+            <div className="space-y-2">
+              <span className="block text-sm font-medium text-gray-700">Video file</span>
+              <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500 transition hover:border-amber-400 hover:bg-amber-50">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="video/*"
+                  required={!form.videoUrl}
+                  className="sr-only"
+                  onChange={handleFileChange}
+                />
+                {uploading ? (
+                  <span className="text-amber-600">Uploading…</span>
+                ) : selectedFile ? (
+                  <span className="truncate text-center font-medium text-gray-700">{selectedFile.name}</span>
+                ) : (
+                  <span>Click to choose a video file</span>
+                )}
+                <span className="text-xs text-gray-400">MP4, WebM, MOV up to 500 MB</span>
+              </label>
+            </div>
 
             <label className="block space-y-2">
               <span className="text-sm font-medium text-gray-700">Description</span>
@@ -134,7 +219,7 @@ export default function Featured({ clips, games, onCreateClip }: Props) {
                 rows={5}
                 value={form.description}
                 onChange={(event) => updateField('description', event.target.value)}
-                placeholder="Add context so people know what makes this clip worth watching."
+                placeholder="Describe the clip"
                 className={`${inputClassName} resize-none`}
               />
             </label>
@@ -153,20 +238,12 @@ export default function Featured({ clips, games, onCreateClip }: Props) {
 
             <button
               type="submit"
-              disabled={submitting}
-              className="rounded-full bg-gray-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-700"
+              disabled={submitting || uploading || games.length === 0}
+              className="rounded-full bg-gray-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:opacity-50"
             >
               {submitting ? 'Saving…' : 'Add featured clip'}
             </button>
           </form>
-        </section>
-
-        <section className="rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">Suggested next step</h2>
-          <p className="mt-3 text-sm leading-6 text-gray-600">
-            If you want true uploads, a clean MVP is: file upload to storage, thumbnail generation,
-            metadata row in the database, then moderation and feed ranking on the backend.
-          </p>
         </section>
       </aside>
 
@@ -178,7 +255,7 @@ export default function Featured({ clips, games, onCreateClip }: Props) {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search titles, tags, or games"
+                placeholder="Search clips"
                 className={inputClassName}
               />
             </label>
@@ -213,54 +290,79 @@ export default function Featured({ clips, games, onCreateClip }: Props) {
           </div>
         </div>
 
-        <div className="grid gap-4">
-          {filteredClips.map((clip) => (
-            <article key={clip.id} className="rounded-[24px] border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
-                      {clip.gameName}
-                    </p>
-                    <h2 className="mt-2 text-xl font-semibold text-gray-900">{clip.title}</h2>
-                    {clip.groupName && (
-                      <p className="mt-1 text-sm text-gray-500">From {clip.groupName}</p>
-                    )}
-                  </div>
+        {loadingClips ? (
+          <div className="flex justify-center py-10">
+            <div className="h-7 w-7 animate-spin rounded-full border-4 border-amber-500 border-t-transparent" />
+          </div>
+        ) : filteredClips.length === 0 ? (
+          <section className="rounded-[24px] border border-dashed border-gray-300 bg-white p-10 text-center text-sm text-gray-500">
+            No featured clips have been added yet.
+          </section>
+        ) : (
+          <>
+            <div className="grid gap-4">
+              {filteredClips.map((clip) => (
+                <article key={clip.id} className="rounded-[24px] border border-gray-200 bg-white p-5 shadow-sm">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                          {clip.gameName}
+                        </p>
+                        <h2 className="mt-2 text-xl font-semibold text-gray-900">{clip.title}</h2>
+                        {clip.groupName && (
+                          <p className="mt-1 text-sm text-gray-500">From {clip.groupName}</p>
+                        )}
+                      </div>
 
-                  <p className="text-sm leading-6 text-gray-600">{clip.description}</p>
+                      <p className="text-sm leading-6 text-gray-600">{clip.description}</p>
 
-                  <div className="flex flex-wrap gap-2">
-                    {clip.tags.map((tag) => (
-                      <span key={tag} className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
-                        #{tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+                      <div className="flex flex-wrap gap-2">
+                        {clip.tags.map((tag) => (
+                          <span key={tag} className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
 
-                <div className="min-w-[200px] rounded-[22px] bg-gray-50 p-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-500">Likes</span>
-                    <span className="font-semibold text-gray-900">{clip.likes}</span>
+                    <div className="min-w-[200px] rounded-[22px] bg-gray-50 p-4">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Likes</span>
+                        <span className="font-semibold text-gray-900">{clip.likes}</span>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Uploader</span>
+                        <span className="font-medium text-gray-900">{clip.uploader}</span>
+                      </div>
+                      <a
+                        href={clip.videoUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-4 inline-flex rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-white"
+                      >
+                        Open clip
+                      </a>
+                    </div>
                   </div>
-                  <div className="mt-3 flex items-center justify-between text-sm">
-                    <span className="text-gray-500">Uploader</span>
-                    <span className="font-medium text-gray-900">{clip.uploader}</span>
-                  </div>
-                  <a
-                    href={clip.videoUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-4 inline-flex rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-white"
-                  >
-                    Open clip
-                  </a>
-                </div>
+                </article>
+              ))}
+            </div>
+
+            {hasMore && (
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => void handleLoadMore()}
+                  disabled={loadingMore}
+                  className="rounded-full border border-gray-300 bg-white px-6 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {loadingMore ? 'Loading…' : 'Load more'}
+                </button>
               </div>
-            </article>
-          ))}
-        </div>
+            )}
+          </>
+        )}
       </section>
     </div>
   )

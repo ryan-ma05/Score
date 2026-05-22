@@ -9,6 +9,7 @@ export interface Group {
   join_code: string
   owner_id: number
   member_count: number
+  active_member_count: number
   created_at: number
 }
 
@@ -107,6 +108,11 @@ interface GroupContextType {
     userId: number,
     input: { delta?: number; score?: number },
   ) => Promise<GroupGameSessionScore>
+  updateSessionStatus: (
+    groupId: number,
+    sessionId: number,
+    status: GroupSessionStatus,
+  ) => Promise<GroupGameSession>
 }
 
 const GroupContext = createContext<GroupContextType | null>(null)
@@ -140,7 +146,7 @@ export function GroupProvider({ children }: { children: ReactNode }) {
       method: 'POST',
       body: JSON.stringify({ name, description }),
     })
-    setGroups((prev) => [{ ...group, member_count: 1 }, ...prev])
+    setGroups((prev) => [{ ...group, member_count: 1, active_member_count: 1 }, ...prev])
   }, [])
 
   const joinGroup = useCallback(async (code: string) => {
@@ -148,7 +154,7 @@ export function GroupProvider({ children }: { children: ReactNode }) {
       method: 'POST',
       body: JSON.stringify({ code }),
     })
-    setGroups((prev) => [...prev, { ...group, member_count: 1 }])
+    setGroups((prev) => [...prev, { ...group, member_count: Math.max(group.member_count, 1), active_member_count: Math.max(group.active_member_count, 1) }])
     await fetchGroups()
   }, [fetchGroups])
 
@@ -182,7 +188,7 @@ export function GroupProvider({ children }: { children: ReactNode }) {
   const acceptGroupInvite = useCallback(async (inviteId: number) => {
     const { group } = await apiFetch<{ group: Group }>(`/api/groups/invites/${inviteId}/accept`, { method: 'POST' })
     setGroupInvites((prev) => prev.filter((i) => i.id !== inviteId))
-    setGroups((prev) => [...prev, { ...group, member_count: 1 }])
+    setGroups((prev) => [...prev, { ...group, member_count: Math.max(group.member_count, 1), active_member_count: Math.max(group.active_member_count, 1) }])
     await fetchGroups()
   }, [fetchGroups])
 
@@ -239,6 +245,18 @@ export function GroupProvider({ children }: { children: ReactNode }) {
     return mapGroupSessionScore(score)
   }, [])
 
+  const updateSessionStatus = useCallback(async (
+    groupId: number,
+    sessionId: number,
+    status: GroupSessionStatus,
+  ) => {
+    const { session } = await apiFetch<{ session: GroupSessionRow }>(`/api/groups/${groupId}/sessions/${sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    })
+    return mapGroupSession(session)
+  }, [])
+
   return (
     <GroupContext.Provider value={{
       groups, groupInvites, loading, error,
@@ -246,7 +264,7 @@ export function GroupProvider({ children }: { children: ReactNode }) {
       inviteToGroup, removeMember, transferOwnership,
       acceptGroupInvite, declineGroupInvite, getGroupDetail,
       getGroupSavedGames, saveGameToGroup, removeSavedGame,
-      getGroupSessions, createGroupSession, updateSessionScore,
+      getGroupSessions, createGroupSession, updateSessionScore, updateSessionStatus,
     }}>
       {children}
     </GroupContext.Provider>

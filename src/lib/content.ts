@@ -104,8 +104,8 @@ export function validateClipSubmission(input: CreateClipInput) {
     return 'Complete every clip field before adding it to the feed.'
   }
 
-  if (!/^https?:\/\//i.test(input.videoUrl.trim())) {
-    return 'Use a full video URL so clips have a portable destination.'
+  if (!/^(https?:\/\/|\/uploads\/)/i.test(input.videoUrl.trim())) {
+    return 'Use a full video URL or upload a video file.'
   }
 
   return null

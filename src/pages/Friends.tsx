@@ -27,6 +27,9 @@ interface FriendSearchResult {
 
 export default function Friends() {
   const [friends, setFriends] = useState<Friend[]>([])
+  const [hasMoreFriends, setHasMoreFriends] = useState(false)
+  const [friendsOffset, setFriendsOffset] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [requests, setRequests] = useState<FriendRequest[]>([])
   const [sent, setSent] = useState<FriendRequest[]>([])
   const [query, setQuery] = useState('')
@@ -36,6 +39,8 @@ export default function Friends() {
   const [error, setError] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
 
+  const FRIENDS_PAGE = 50
+
   const refreshLists = useCallback(async (showLoading = true) => {
     if (showLoading) {
       setLoading(true)
@@ -44,12 +49,14 @@ export default function Friends() {
 
     try {
       const [friendsRes, requestsRes, sentRes] = await Promise.all([
-        apiFetch<{ friends: Friend[] }>('/api/friends'),
+        apiFetch<{ friends: Friend[]; hasMore: boolean }>(`/api/friends?limit=${FRIENDS_PAGE}&offset=0`),
         apiFetch<{ requests: FriendRequest[] }>('/api/friends/requests'),
         apiFetch<{ sent: FriendRequest[] }>('/api/friends/sent'),
       ])
 
       setFriends(friendsRes.friends)
+      setHasMoreFriends(friendsRes.hasMore ?? false)
+      setFriendsOffset(FRIENDS_PAGE)
       setRequests(requestsRes.requests)
       setSent(sentRes.sent)
     } catch (err) {
@@ -59,6 +66,23 @@ export default function Friends() {
       setLoading(false)
     }
   }, [])
+
+  const handleLoadMoreFriends = useCallback(async () => {
+    setLoadingMore(true)
+    try {
+      const { friends: data, hasMore } = await apiFetch<{ friends: Friend[]; hasMore: boolean }>(
+        `/api/friends?limit=${FRIENDS_PAGE}&offset=${friendsOffset}`
+      )
+      setFriends((prev) => {
+        const seen = new Set(prev.map((f) => f.id))
+        return [...prev, ...data.filter((f) => !seen.has(f.id))]
+      })
+      setHasMoreFriends(hasMore ?? false)
+      setFriendsOffset((prev) => prev + FRIENDS_PAGE)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [friendsOffset])
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -228,6 +252,18 @@ export default function Friends() {
                     </div>
                   </div>
                 ))}
+                {hasMoreFriends && (
+                  <div className="flex justify-center pt-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleLoadMoreFriends()}
+                      disabled={loadingMore}
+                      className="rounded-full border border-gray-300 bg-white px-5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {loadingMore ? 'Loading…' : 'Load more'}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </Panel>

@@ -24,7 +24,23 @@ function generateUniqueCode() {
 const SESSION_STATUSES = new Set(['scheduled', 'completed', 'cancelled'])
 
 function getGroupById(groupId) {
-  return db.prepare('SELECT * FROM groups WHERE id = ?').get(groupId)
+  return db.prepare(`
+    SELECT g.*,
+           (
+             SELECT COUNT(*)
+             FROM group_members gm
+             WHERE gm.group_id = g.id
+           ) AS member_count,
+           (
+             SELECT COUNT(*)
+             FROM group_members gm
+             JOIN users u ON u.id = gm.user_id
+             WHERE gm.group_id = g.id
+               AND u.last_seen_at >= unixepoch() - 300
+           ) AS active_member_count
+    FROM groups g
+    WHERE g.id = ?
+  `).get(groupId)
 }
 
 function requireGroupMember(groupId, userId) {
@@ -117,10 +133,12 @@ function normalizeEpoch(value) {
 router.get('/', (req, res) => {
   const rows = db.prepare(`
     SELECT g.id, g.name, g.description, g.join_code, g.owner_id, g.created_at,
-           COUNT(gm2.user_id) AS member_count
+           COUNT(gm2.user_id) AS member_count,
+           COALESCE(SUM(CASE WHEN u2.last_seen_at >= unixepoch() - 300 THEN 1 ELSE 0 END), 0) AS active_member_count
     FROM groups g
     JOIN group_members gm ON gm.group_id = g.id AND gm.user_id = ?
     JOIN group_members gm2 ON gm2.group_id = g.id
+    JOIN users u2 ON u2.id = gm2.user_id
     GROUP BY g.id
     ORDER BY g.created_at DESC
   `).all(req.user.id)
@@ -156,7 +174,7 @@ router.post('/', (req, res) => {
 
     const groupId = result.lastInsertRowid
     db.prepare('INSERT INTO group_members (group_id, user_id) VALUES (?, ?)').run(groupId, req.user.id)
-    return db.prepare('SELECT * FROM groups WHERE id = ?').get(groupId)
+    return getGroupById(groupId)
   })
 
   const group = createGroup()
@@ -175,7 +193,7 @@ router.post('/join', (req, res) => {
   if (already) return res.status(409).json({ error: 'Already a member of this group' })
 
   db.prepare('INSERT INTO group_members (group_id, user_id) VALUES (?, ?)').run(group.id, req.user.id)
-  return res.json({ group })
+  return res.json({ group: getGroupById(group.id) })
 })
 
 // POST /api/groups/invites/:inviteId/accept
@@ -192,7 +210,7 @@ router.post('/invites/:inviteId/accept', (req, res) => {
     if (!already) {
       db.prepare('INSERT INTO group_members (group_id, user_id) VALUES (?, ?)').run(invite.group_id, req.user.id)
     }
-    return db.prepare('SELECT * FROM groups WHERE id = ?').get(invite.group_id)
+    return getGroupById(invite.group_id)
   })
 
   const group = accept()
@@ -462,7 +480,46 @@ router.post('/:id/sessions/:sessionId/scores', (req, res) => {
     WHERE ss.session_id = ? AND ss.user_id = ?
   `).get(sessionId, userId)
 
+  req.io.to(`session:${sessionId}`).emit('score-updated', scoreRow)
+
   return res.json({ score: scoreRow })
+})
+
+// GET /api/groups/:id/leaderboard — cumulative stats across completed sessions
+router.get('/:id/leaderboard', (req, res) => {
+  const groupId = Number(req.params.id)
+
+  const group = getGroupById(groupId)
+  if (!group) return res.status(404).json({ error: 'Group not found' })
+
+  const member = requireGroupMember(groupId, req.user.id)
+  if (!member) return res.status(403).json({ error: 'Not a member of this group' })
+
+  const rows = db.prepare(`
+    SELECT
+      u.id                                            AS user_id,
+      u.name                                          AS user_name,
+      COUNT(DISTINCT sc.session_id)                   AS sessions_played,
+      COALESCE(SUM(sc.score), 0)                      AS total_score,
+      ROUND(COALESCE(AVG(sc.score * 1.0), 0), 1)      AS avg_score,
+      COALESCE(SUM(
+        CASE WHEN sc.score = (
+          SELECT MAX(sc2.score)
+          FROM group_game_session_scores sc2
+          WHERE sc2.session_id = sc.session_id
+        ) AND sc.score > 0 THEN 1 ELSE 0 END
+      ), 0)                                           AS wins
+    FROM group_members gm
+    JOIN users u ON u.id = gm.user_id
+    LEFT JOIN group_game_session_scores sc ON sc.user_id = u.id
+    LEFT JOIN group_game_sessions s
+      ON s.id = sc.session_id AND s.group_id = ? AND s.status = 'completed'
+    WHERE gm.group_id = ?
+    GROUP BY u.id, u.name
+    ORDER BY total_score DESC, u.name ASC
+  `).all(groupId, groupId)
+
+  return res.json({ leaderboard: rows })
 })
 
 // GET /api/groups/:id — group detail + members
@@ -569,6 +626,67 @@ router.delete('/:id/leave', (req, res) => {
   const result = db.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').run(groupId, req.user.id)
   if (result.changes === 0) return res.status(404).json({ error: 'Not a member of this group' })
   return res.json({ message: 'Left group' })
+})
+
+// PATCH /api/groups/:id/sessions/:sessionId — update session status
+router.patch('/:id/sessions/:sessionId', (req, res) => {
+  const groupId = Number(req.params.id)
+  const sessionId = Number(req.params.sessionId)
+  const { status } = req.body ?? {}
+
+  if (!['completed', 'cancelled'].includes(status)) {
+    return res.status(400).json({ error: 'status must be completed or cancelled' })
+  }
+
+  if (!requireGroupMember(groupId, req.user.id)) {
+    return res.status(403).json({ error: 'Not a member of this group' })
+  }
+
+  const session = db.prepare('SELECT * FROM group_game_sessions WHERE id = ? AND group_id = ?').get(sessionId, groupId)
+  if (!session) return res.status(404).json({ error: 'Session not found' })
+  if (session.status !== 'scheduled') {
+    return res.status(409).json({ error: 'Only scheduled sessions can be updated' })
+  }
+
+  db.prepare('UPDATE group_game_sessions SET status = ? WHERE id = ?').run(status, sessionId)
+
+  const updated = db.prepare(`
+    SELECT s.*, g.name AS game_name, g.category, g.specific_game, g.scoring_system,
+           u.name AS created_by_name
+    FROM group_game_sessions s
+    JOIN games g ON g.id = s.game_id
+    LEFT JOIN users u ON u.id = s.created_by
+    WHERE s.id = ?
+  `).get(sessionId)
+
+  return res.json({ session: { ...updated, scores: [] } })
+})
+
+// GET /api/groups/:id/score-history — per-session score timeline for chart
+router.get('/:id/score-history', (req, res) => {
+  const groupId = Number(req.params.id)
+
+  if (!requireGroupMember(groupId, req.user.id)) {
+    return res.status(403).json({ error: 'Not a member of this group' })
+  }
+
+  const rows = db.prepare(`
+    SELECT
+      s.id AS session_id,
+      g.specific_game,
+      COALESCE(s.scheduled_for, s.created_at) AS session_date,
+      sc.user_id,
+      u.name AS user_name,
+      sc.score
+    FROM group_game_sessions s
+    JOIN games g ON g.id = s.game_id
+    JOIN group_game_session_scores sc ON sc.session_id = s.id
+    JOIN users u ON u.id = sc.user_id
+    WHERE s.group_id = ? AND s.status = 'completed'
+    ORDER BY session_date ASC
+  `).all(groupId)
+
+  return res.json({ history: rows })
 })
 
 module.exports = router
